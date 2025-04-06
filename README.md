@@ -14,6 +14,7 @@
 GoGo allows you to:
 
 * Parse a directory containing Go files and a go.mod file
+* Parse Go files from any filesystem that implements the `fs.FS` interface
 * Manipulate the parsed code:
   * Rename the package
   * Remove, duplicate, or rename files
@@ -30,7 +31,8 @@ go get github.com/guillermo/gogo
 ## Quick Start
 
 ```go
-template := gogo.Open("./example")
+// Using a local directory
+template := gogo.OpenFS("./example")
 template.PackageName = "mypackage"
 file, _ := template.ExtractAndRemove("user.go")
 for _, name := range []string{"Car","Toy", "Person"} {
@@ -42,17 +44,26 @@ for _, name := range []string{"Car","Toy", "Person"} {
   template.Add(name + ".go", file) // this adds the new file to the template
 }
 template.Write("./generated")
+
+// Using fs.FS interface (e.g., with embed)
+//go:embed example
+var embedded embed.FS
+template, _ := gogo.Open(embedded, "example")
+// ... manipulate code as above
 ```
 
 ## API Reference
 
-### Open
+### Open and OpenFS
 
 ```go
-func Open(dir string) (*Template, error)
+func Open(fsys fs.FS, dirPath string) (*Template, error)
+func OpenFS(dir string) (*Template, error)
 ```
 
-Open reads all the Go files in the given directory and returns a Template object.
+`Open` reads all Go files from an `fs.FS` interface and returns a Template object. This allows parsing code from any filesystem implementation, including embedded files, zip files, etc.
+
+`OpenFS` is a convenience wrapper around `Open` that uses the local filesystem. It's equivalent to `Open(os.DirFS(dir), dir)`.
 
 ### Template
 

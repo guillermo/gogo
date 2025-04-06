@@ -2,10 +2,12 @@ package gogo
 
 import (
 	"bytes"
+	"go/ast"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // fmt runs go fmt on the given directory
@@ -39,7 +41,7 @@ func testHelloWorld(t *testing.T, outDir string, fn func(*Template)) {
 	gofmt("fixtures/helloworld")
 	os.RemoveAll(outDir)
 
-	tmpl, err := Open("fixtures/helloworld")
+	tmpl, err := OpenFS("fixtures/helloworld")
 	if err != nil {
 		t.Fatalf("failed to open fixture1: %v", err)
 	}
@@ -64,6 +66,59 @@ func testHelloWorld(t *testing.T, outDir string, fn func(*Template)) {
 
 func TestJustCopy(t *testing.T) {
 	testHelloWorld(t, "cases/helloworld", nil)
+}
+
+// TestOpenWithFSInterface tests if we can use the Open function with a custom fs.FS implementation
+func TestOpenWithFSInterface(t *testing.T) {
+	// Create an in-memory filesystem
+	memFS := fstest.MapFS{
+		"main.go": &fstest.MapFile{
+			Data: []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("HELLO, WORLD!")
+}
+`),
+			Mode: 0644,
+		},
+	}
+
+	// Open the filesystem
+	tmpl, err := Open(memFS, "memory-fs")
+	if err != nil {
+		t.Fatalf("failed to open in-memory filesystem: %v", err)
+	}
+
+	// Check if the template was created correctly
+	if tmpl.PackageName != "main" {
+		t.Fatalf("expected package name 'main', got %q", tmpl.PackageName)
+	}
+
+	// Check if the file was read correctly
+	file, ok := tmpl.Files["main.go"]
+	if !ok {
+		t.Fatal("main.go not found in template")
+	}
+
+	// Verify the file content by checking if the AST has the main function
+	var mainFound bool
+	for _, decl := range file.AstFile.Decls {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok && funcDecl.Name.Name == "main" {
+			mainFound = true
+			break
+		}
+	}
+
+	if !mainFound {
+		t.Fatal("main function not found in parsed AST")
+	}
+
+	// Verify the directory path was set correctly
+	if tmpl.dir != "memory-fs" {
+		t.Fatalf("expected dir to be 'memory-fs', got %q", tmpl.dir)
+	}
 }
 
 func TestRenameFile(t *testing.T) {
@@ -244,7 +299,7 @@ func TestSave(t *testing.T) {
 	os.RemoveAll(outDir)
 	mustRun("cp -r fixtures/existing " + outDir)
 
-	tmpl, err := Open(outDir)
+	tmpl, err := OpenFS(outDir)
 	if err != nil {
 		t.Fatalf("failed to open fixture1: %v", err)
 	}
