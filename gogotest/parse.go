@@ -12,11 +12,8 @@ import (
 //
 // # another/file.go
 // more contents
-func New(content string) *FS {
-	mockFS := newMockFileSystem()
-	fs := &FS{
-		FS: mockFS,
-	}
+func New(content string) *mockFileSystem {
+	fs := newMockFileSystem()
 
 	// Split by lines
 	lines := strings.Split(content, "\n")
@@ -32,10 +29,10 @@ func New(content string) *FS {
 				// Ensure directory exists
 				dir := filepath.Dir(currentFile)
 				if dir != "." && dir != "/" {
-					fs.FS.(*mockFileSystem).mkdirAll(dir)
+					fs.mkdirAll(dir)
 				}
 				// Write file
-				fs.FS.(*mockFileSystem).writeFile(currentFile, []byte(fileContent.String()))
+				fs.writeFile(currentFile, []byte(fileContent.String()))
 			}
 
 			// Start new file
@@ -56,10 +53,10 @@ func New(content string) *FS {
 		// Ensure directory exists
 		dir := filepath.Dir(currentFile)
 		if dir != "." && dir != "/" {
-			fs.FS.(*mockFileSystem).mkdirAll(dir)
+			fs.mkdirAll(dir)
 		}
 		// Write file
-		fs.FS.(*mockFileSystem).writeFile(currentFile, []byte(fileContent.String()))
+		fs.writeFile(currentFile, []byte(fileContent.String()))
 	}
 
 	return fs

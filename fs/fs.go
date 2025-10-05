@@ -27,12 +27,6 @@ type FS interface {
 
 	// TempFile creates a temporary file
 	TempFile(dir, pattern string) (File, error)
-
-	// Open opens a file for reading
-	Open(path string) (File, error)
-
-	// Create creates or truncates a file
-	Create(path string) (File, error)
 }
 
 // File represents an open file

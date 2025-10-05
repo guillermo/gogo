@@ -31,10 +31,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/guillermo/gogo"
-	"github.com/guillermo/gogo/fs"
 )
 
 // Template represents a parsed Go project that can be transformed and extracted
@@ -44,8 +44,10 @@ type Template struct {
 	pkgName string
 }
 
-// New creates a new Template from a filesystem containing Go source files
-func New(filesystem fs.FS) (*Template, error) {
+// New creates a new Template from a filesystem containing Go source files.
+// The filesystem must implement io/fs.ReadFileFS. If it also implements
+// io/fs.StatFS, it will be used to check for file existence.
+func New(filesystem fs.ReadFileFS) (*Template, error) {
 	fset := token.NewFileSet()
 	files := make(map[string]*ast.File)
 	pkgName := ""
@@ -321,7 +323,7 @@ func (t *Template) ExtractType(name string) (gogo.TypeOpts, error) {
 }
 
 // findGoFiles finds all .go files in the filesystem
-func findGoFiles(filesystem fs.FS) ([]string, error) {
+func findGoFiles(filesystem fs.ReadFileFS) ([]string, error) {
 	// For mockFileSystem, we can access GetFiles if available
 	type filesGetter interface {
 		GetFiles() map[string][]byte
@@ -339,8 +341,9 @@ func findGoFiles(filesystem fs.FS) ([]string, error) {
 		return goFiles, nil
 	}
 
-	// For real filesystems, try common patterns
+	// For real filesystems, check if it supports StatFS
 	var goFiles []string
+	statFS, hasStatFS := filesystem.(fs.StatFS)
 
 	// Common filenames to try
 	commonFiles := []string{
@@ -355,8 +358,15 @@ func findGoFiles(filesystem fs.FS) ([]string, error) {
 	}
 
 	for _, filename := range commonFiles {
-		if _, err := filesystem.Stat(filename); err == nil {
-			goFiles = append(goFiles, filename)
+		if hasStatFS {
+			if _, err := statFS.Stat(filename); err == nil {
+				goFiles = append(goFiles, filename)
+			}
+		} else {
+			// Try to read the file directly
+			if _, err := filesystem.ReadFile(filename); err == nil {
+				goFiles = append(goFiles, filename)
+			}
 		}
 	}
 
@@ -366,7 +376,17 @@ func findGoFiles(filesystem fs.FS) ([]string, error) {
 		matches, err := filepath.Glob(pattern)
 		if err == nil {
 			for _, match := range matches {
-				if _, err := filesystem.Stat(match); err == nil {
+				// Check existence
+				exists := false
+				if hasStatFS {
+					_, err := statFS.Stat(match)
+					exists = err == nil
+				} else {
+					_, err := filesystem.ReadFile(match)
+					exists = err == nil
+				}
+
+				if exists {
 					// Check if not already added
 					alreadyAdded := false
 					for _, existing := range goFiles {

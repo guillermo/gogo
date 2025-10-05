@@ -20,7 +20,7 @@ type User struct {
 }
 `)
 
-		files := fs.FS.(*mockFileSystem).getFiles()
+		files := fs.getFiles()
 		if len(files) != 2 {
 			t.Errorf("Expected 2 files, got %d", len(files))
 		}
@@ -36,7 +36,7 @@ type User struct {
 
 	t.Run("handles empty input", func(t *testing.T) {
 		fs := New("")
-		files := fs.FS.(*mockFileSystem).getFiles()
+		files := fs.getFiles()
 		if len(files) != 0 {
 			t.Errorf("Expected 0 files for empty input, got %d", len(files))
 		}
@@ -52,7 +52,7 @@ type User struct {}
 package controllers
 `)
 
-		files := fs.FS.(*mockFileSystem).getFiles()
+		files := fs.getFiles()
 		if len(files) != 2 {
 			t.Errorf("Expected 2 files, got %d", len(files))
 		}
@@ -172,7 +172,7 @@ type User struct {
 
 	t.Run("returns empty string for empty filesystem", func(t *testing.T) {
 		fs := New("")
-		output := fs.FS.(*mockFileSystem).String()
+		output := fs.String()
 		if output != "" {
 			t.Errorf("Expected empty string, got %q", output)
 		}

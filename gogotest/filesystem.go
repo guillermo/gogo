@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,11 +136,6 @@ func (fi *mockFileInfo) ModTime() time.Time { return fi.modTime }
 func (fi *mockFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *mockFileInfo) Sys() interface{}   { return nil }
 
-// FS represents a mock filesystem for testing that implements gogo.FS interface
-type FS struct {
-	fs.FS
-}
-
 // gogo.FS interface methods
 func (fs *mockFileSystem) ReadFile(path string) ([]byte, error) {
 	files := fs.getFiles()
@@ -229,39 +225,59 @@ func (fs *mockFileSystem) TempFile(dir, pattern string) (fs.File, error) {
 	}, nil
 }
 
-func (fs *mockFileSystem) Open(path string) (fs.File, error) {
-	content, err := fs.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return &mockFile{
-		name:    path,
-		content: bytes.NewBuffer(content),
-	}, nil
-}
-
-func (fs *mockFileSystem) Create(path string) (fs.File, error) {
-	fs.writeFile(path, []byte{})
-
-	return &mockFile{
-		name:    path,
-		content: bytes.NewBuffer([]byte{}),
-	}, nil
-}
-
 // GetFiles returns all files in the filesystem (for testing assertions)
 func (fs *mockFileSystem) GetFiles() map[string][]byte {
 	return fs.getFiles()
 }
 
-func (fs *FS) String() string {
-	return fs.FS.(*mockFileSystem).String()
+// Open implements io/fs.FS by wrapping the file content in a read-only file
+func (mfs *mockFileSystem) Open(name string) (iofs.File, error) {
+	content, err := mfs.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := mfs.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &readOnlyFile{
+		name:    name,
+		content: content,
+		info:    info,
+		offset:  0,
+	}, nil
+}
+
+// readOnlyFile implements io/fs.File for reading from memory
+type readOnlyFile struct {
+	name    string
+	content []byte
+	info    os.FileInfo
+	offset  int
+}
+
+func (f *readOnlyFile) Stat() (iofs.FileInfo, error) {
+	return f.info, nil
+}
+
+func (f *readOnlyFile) Read(p []byte) (int, error) {
+	if f.offset >= len(f.content) {
+		return 0, io.EOF
+	}
+	n := copy(p, f.content[f.offset:])
+	f.offset += n
+	return n, nil
+}
+
+func (f *readOnlyFile) Close() error {
+	return nil
 }
 
 // String returns the content of the filesystem in the same text block format as input
-func (fs *mockFileSystem) String() string {
-	files := fs.getFiles()
+func (mfs *mockFileSystem) String() string {
+	files := mfs.getFiles()
 	if len(files) == 0 {
 		return ""
 	}
@@ -284,14 +300,12 @@ func (fs *mockFileSystem) String() string {
 	return result.String()
 }
 
-var _ fs.FS = new(mockFileSystem)
-
 // Assert checks if the filesystem contains the expected content
 // It ignores whitespace and indentation differences
-func (fs *FS) Assert(expectedContent string) error {
+func (mfs *mockFileSystem) Assert(expectedContent string) error {
 	normalizedExpected := normalizeWhitespace(expectedContent)
 
-	files := fs.FS.(*mockFileSystem).getFiles()
+	files := mfs.getFiles()
 	for _, content := range files {
 		normalizedContent := normalizeWhitespace(string(content))
 		if strings.Contains(normalizedContent, normalizedExpected) {
@@ -308,6 +322,12 @@ func (fs *FS) Assert(expectedContent string) error {
 	return fmt.Errorf("expected content not found in any file.\nExpected (normalized):\n%s\n\nSearched in files: %v",
 		normalizedExpected, fileList)
 }
+
+// Compile-time interface assertions
+var _ fs.FS = new(mockFileSystem)
+var _ iofs.FS = new(mockFileSystem)
+var _ iofs.ReadFileFS = new(mockFileSystem)
+var _ iofs.StatFS = new(mockFileSystem)
 
 // normalizeWhitespace removes extra whitespace and normalizes indentation
 func normalizeWhitespace(s string) string {
